@@ -1,0 +1,46 @@
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+# Define your addresses
+my_address <- "xxx"
+target_address <- "0xd96047ed92d3dfe45b1c21d7c79dfe0f95b02bdc"
+
+# Define the API endpoint (this is a placeholder, replace with the actual Blastscan API endpoint)
+api_endpoint <- "https://api.blastscan.io/api"
+api_key <- "xxx"
+
+
+# Function to fetch transactions
+fetch_transactions <- function(address, action) {
+  response <- GET(paste0(api_endpoint, "?module=account&action=", action, "&address=", address, "&apikey=", api_key))
+  transactions <- fromJSON(content(response, as = "text"))$result
+  as.data.frame(transactions)
+}
+
+# Fetch regular transactions for my_address
+transactions_my <- fetch_transactions(my_address, "txlist")
+
+# Fetch internal transactions for target_address
+internal_transactions <- fetch_transactions(target_address, "txlistinternal")
+
+# Combine regular and internal transactions for analysis
+all_transactions <- bind_rows(transactions_my, internal_transactions)
+
+# Filter transactions where ETH was deposited to and withdrawn from target_address and convert wei to ETH
+deposits <- all_transactions %>%
+  filter(tolower(from) == tolower(my_address) & tolower(to) == tolower(target_address)) %>%
+  mutate(value_eth = as.numeric(value) / 10^18)
+
+withdrawals <- all_transactions %>%
+  filter(tolower(from) == tolower(target_address) & tolower(to) == tolower(my_address)) %>%
+  mutate(value_eth = as.numeric(value) / 10^18)
+
+# Calculate total deposited and withdrawn
+total_deposited <- sum(deposits$value_eth, na.rm = TRUE)
+total_withdrawn <- sum(withdrawals$value_eth, na.rm = TRUE)
+
+# Output results
+cat("Total ETH deposited to", target_address, ":", total_deposited, "ETH\n")
+cat("Total ETH withdrawn from", target_address, ":", total_withdrawn, "ETH\n")
+cat("Net ETH deposited to", target_address, ":", total_deposited - total_withdrawn, "ETH\n")
